@@ -2,23 +2,7 @@ package openai
 
 import (
 	"context"
-	"errors"
 	"net/http"
-)
-
-var (
-	ErrO1MaxTokensDeprecated                   = errors.New("this model is not supported MaxTokens, please use MaxCompletionsTokens")                              //nolint:lll
-	ErrCompletionUnsupportedModel              = errors.New("this model is not supported with this method, please use CreateChatCompletion client method instead") //nolint:lll
-	ErrCompletionStreamNotSupported            = errors.New("streaming is not supported with this method, please use CreateCompletionStream")                      //nolint:lll
-	ErrCompletionRequestPromptTypeNotSupported = errors.New("the type of CompletionRequest.Prompt only supports string and []string")                              //nolint:lll
-)
-
-var (
-	ErrO1BetaLimitationsMessageTypes = errors.New("this model has beta-limitations, user and assistant messages only, system messages are not supported")                                  //nolint:lll
-	ErrO1BetaLimitationsStreaming    = errors.New("this model has beta-limitations, streaming not supported")                                                                              //nolint:lll
-	ErrO1BetaLimitationsTools        = errors.New("this model has beta-limitations, tools, function calling, and response format parameters are not supported")                            //nolint:lll
-	ErrO1BetaLimitationsLogprobs     = errors.New("this model has beta-limitations, logprobs not supported")                                                                               //nolint:lll
-	ErrO1BetaLimitationsOther        = errors.New("this model has beta-limitations, temperature, top_p and n are fixed at 1, while presence_penalty and frequency_penalty are fixed at 0") //nolint:lll
 )
 
 // GPT3 Defines the models provided by OpenAI to use when generating
@@ -30,6 +14,10 @@ const (
 	O1Mini20240912        = "o1-mini-2024-09-12"
 	O1Preview             = "o1-preview"
 	O1Preview20240912     = "o1-preview-2024-09-12"
+	O1                    = "o1"
+	O120241217            = "o1-2024-12-17"
+	O3Mini                = "o3-mini"
+	O3Mini20250131        = "o3-mini-2025-01-31"
 	GPT432K0613           = "gpt-4-32k-0613"
 	GPT432K0314           = "gpt-4-32k-0314"
 	GPT432K               = "gpt-4-32k"
@@ -38,6 +26,7 @@ const (
 	GPT4o                 = "gpt-4o"
 	GPT4o20240513         = "gpt-4o-2024-05-13"
 	GPT4o20240806         = "gpt-4o-2024-08-06"
+	GPT4o20241120         = "gpt-4o-2024-11-20"
 	GPT4oLatest           = "chatgpt-4o-latest"
 	GPT4oMini             = "gpt-4o-mini"
 	GPT4oMini20240718     = "gpt-4o-mini-2024-07-18"
@@ -94,21 +83,14 @@ const (
 	CodexCodeDavinci001 = "code-davinci-001"
 )
 
-// O1SeriesModels List of new Series of OpenAI models.
-// Some old api attributes not supported.
-var O1SeriesModels = map[string]struct{}{
-	O1Mini:            {},
-	O1Mini20240912:    {},
-	O1Preview:         {},
-	O1Preview20240912: {},
-}
-
 var disabledModelsForEndpoints = map[string]map[string]bool{
 	"/completions": {
 		O1Mini:               true,
 		O1Mini20240912:       true,
 		O1Preview:            true,
 		O1Preview20240912:    true,
+		O3Mini:               true,
+		O3Mini20250131:       true,
 		GPT3Dot5Turbo:        true,
 		GPT3Dot5Turbo0301:    true,
 		GPT3Dot5Turbo0613:    true,
@@ -120,6 +102,7 @@ var disabledModelsForEndpoints = map[string]map[string]bool{
 		GPT4o:                true,
 		GPT4o20240513:        true,
 		GPT4o20240806:        true,
+		GPT4o20241120:        true,
 		GPT4oLatest:          true,
 		GPT4oMini:            true,
 		GPT4oMini20240718:    true,
@@ -161,71 +144,23 @@ func checkEndpointSupportsModel(endpoint, model string) bool {
 func checkPromptType(prompt any) bool {
 	_, isString := prompt.(string)
 	_, isStringSlice := prompt.([]string)
-	return isString || isStringSlice
-}
-
-var unsupportedToolsForO1Models = map[ToolType]struct{}{
-	ToolTypeFunction: {},
-}
-
-var availableMessageRoleForO1Models = map[string]struct{}{
-	ChatMessageRoleUser:      {},
-	ChatMessageRoleAssistant: {},
-}
-
-// validateRequestForO1Models checks for deprecated fields of OpenAI models.
-func validateRequestForO1Models(request ChatCompletionRequest) error {
-	if _, found := O1SeriesModels[request.Model]; !found {
-		return nil
+	if isString || isStringSlice {
+		return true
 	}
 
-	if request.MaxTokens > 0 {
-		return ErrO1MaxTokensDeprecated
+	// check if it is prompt is []string hidden under []any
+	slice, isSlice := prompt.([]any)
+	if !isSlice {
+		return false
 	}
 
-	// Beta Limitations
-	// refs:https://platform.openai.com/docs/guides/reasoning/beta-limitations
-	// Streaming: not supported
-	if request.Stream {
-		return ErrO1BetaLimitationsStreaming
-	}
-	// Logprobs: not supported.
-	if request.LogProbs {
-		return ErrO1BetaLimitationsLogprobs
-	}
-
-	// Message types: user and assistant messages only, system messages are not supported.
-	for _, m := range request.Messages {
-		if _, found := availableMessageRoleForO1Models[m.Role]; !found {
-			return ErrO1BetaLimitationsMessageTypes
+	for _, item := range slice {
+		_, itemIsString := item.(string)
+		if !itemIsString {
+			return false
 		}
 	}
-
-	// Tools: tools, function calling, and response format parameters are not supported
-	for _, t := range request.Tools {
-		if _, found := unsupportedToolsForO1Models[t.Type]; found {
-			return ErrO1BetaLimitationsTools
-		}
-	}
-
-	// Other: temperature, top_p and n are fixed at 1, while presence_penalty and frequency_penalty are fixed at 0.
-	if request.Temperature > 0 && request.Temperature != 1 {
-		return ErrO1BetaLimitationsOther
-	}
-	if request.TopP > 0 && request.TopP != 1 {
-		return ErrO1BetaLimitationsOther
-	}
-	if request.N > 0 && request.N != 1 {
-		return ErrO1BetaLimitationsOther
-	}
-	if request.PresencePenalty > 0 {
-		return ErrO1BetaLimitationsOther
-	}
-	if request.FrequencyPenalty > 0 {
-		return ErrO1BetaLimitationsOther
-	}
-
-	return nil
+	return true // all items in the slice are string, so it is []string
 }
 
 // CompletionRequest represents a request structure for completion API.
@@ -238,18 +173,23 @@ type CompletionRequest struct {
 	// LogitBias is must be a token id string (specified by their token ID in the tokenizer), not a word string.
 	// incorrect: `"logit_bias":{"You": 6}`, correct: `"logit_bias":{"1639": 6}`
 	// refs: https://platform.openai.com/docs/api-reference/completions/create#completions/create-logit_bias
-	LogitBias       map[string]int `json:"logit_bias,omitempty"`
-	LogProbs        int            `json:"logprobs,omitempty"`
-	MaxTokens       int            `json:"max_tokens,omitempty"`
-	N               int            `json:"n,omitempty"`
-	PresencePenalty float32        `json:"presence_penalty,omitempty"`
-	Seed            *int           `json:"seed,omitempty"`
-	Stop            []string       `json:"stop,omitempty"`
-	Stream          bool           `json:"stream,omitempty"`
-	Suffix          string         `json:"suffix,omitempty"`
-	Temperature     float32        `json:"temperature,omitempty"`
-	TopP            float32        `json:"top_p,omitempty"`
-	User            string         `json:"user,omitempty"`
+	LogitBias map[string]int `json:"logit_bias,omitempty"`
+	// Store can be set to true to store the output of this completion request for use in distillations and evals.
+	// https://platform.openai.com/docs/api-reference/chat/create#chat-create-store
+	Store bool `json:"store,omitempty"`
+	// Metadata to store with the completion.
+	Metadata        map[string]string `json:"metadata,omitempty"`
+	LogProbs        int               `json:"logprobs,omitempty"`
+	MaxTokens       int               `json:"max_tokens,omitempty"`
+	N               int               `json:"n,omitempty"`
+	PresencePenalty float32           `json:"presence_penalty,omitempty"`
+	Seed            *int              `json:"seed,omitempty"`
+	Stop            []string          `json:"stop,omitempty"`
+	Stream          bool              `json:"stream,omitempty"`
+	Suffix          string            `json:"suffix,omitempty"`
+	Temperature     float32           `json:"temperature,omitempty"`
+	TopP            float32           `json:"top_p,omitempty"`
+	User            string            `json:"user,omitempty"`
 }
 
 // CompletionChoice represents one of possible completions.
