@@ -217,8 +217,10 @@ type ChatCompletionResponseFormatJSONSchema struct {
 
 // ChatCompletionRequest represents a request structure for chat completion API.
 type ChatCompletionRequest struct {
-    Model    string                  `json:"model"`
-    Messages []ChatCompletionMessage `json:"messages"`
+    PromptId    string                  `json:"prompt_id"`
+    PromptParam map[string]string       `json:"prompt_param"`
+    Model       string                  `json:"model"`
+    Messages    []ChatCompletionMessage `json:"messages"`
     // MaxTokens The maximum number of tokens that can be generated in the chat completion.
     // This value can be used to control costs for text generated via API.
     // This value is now deprecated in favor of max_completion_tokens, and is not compatible with o1 series models.
@@ -383,8 +385,8 @@ type ChatCompletionResponse struct {
 
 // CreateChatCompletion — API call to Create a completion for the chat message.
 func (c *Client) CreateChatCompletion(
-        ctx context.Context,
-        request ChatCompletionRequest,
+    ctx context.Context,
+    request ChatCompletionRequest,
 ) (response ChatCompletionResponse, err error) {
     if request.Stream {
         err = ErrChatCompletionStreamNotSupported
@@ -406,6 +408,40 @@ func (c *Client) CreateChatCompletion(
         ctx,
         http.MethodPost,
         c.fullURL(urlSuffix, withModel(request.Model)),
+        withBody(request),
+    )
+    if err != nil {
+        return
+    }
+
+    err = c.sendRequest(req, &response)
+    return
+}
+
+func (c *Client) CreateChatCompletionWithPrompt(
+    ctx context.Context,
+    request ChatCompletionRequest,
+) (response ChatCompletionResponse, err error) {
+    if request.Stream {
+        err = ErrChatCompletionStreamNotSupported
+        return
+    }
+
+    // urlSuffix := chatCompletionsSuffix
+    // if !checkEndpointSupportsModel(urlSuffix, request.Model) {
+    //     err = ErrChatCompletionInvalidModel
+    //     return
+    // }
+
+    reasoningValidator := NewReasoningValidator()
+    if err = reasoningValidator.Validate(request); err != nil {
+        return
+    }
+
+    req, err := c.newRequest(
+        ctx,
+        http.MethodPost,
+        c.config.BaseURL,
         withBody(request),
     )
     if err != nil {

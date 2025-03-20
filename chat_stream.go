@@ -71,8 +71,8 @@ type ChatCompletionStream struct {
 // sent as data-only server-sent events as they become available, with the
 // stream terminated by a data: [DONE] message.
 func (c *Client) CreateChatCompletionStream(
-        ctx context.Context,
-        request ChatCompletionRequest,
+    ctx context.Context,
+    request ChatCompletionRequest,
 ) (stream *ChatCompletionStream, err error) {
     urlSuffix := chatCompletionsSuffix
     if !checkEndpointSupportsModel(urlSuffix, request.Model) {
@@ -103,5 +103,39 @@ func (c *Client) CreateChatCompletionStream(
     stream = &ChatCompletionStream{
         streamReader: resp,
     }
+    return
+}
+
+func (c *Client) CreateChatCompletionWithPromptWithPrompt(
+    ctx context.Context,
+    request ChatCompletionRequest,
+) (response ChatCompletionResponse, err error) {
+    if request.Stream {
+        err = ErrChatCompletionStreamNotSupported
+        return
+    }
+
+    // urlSuffix := chatCompletionsSuffix
+    // if !checkEndpointSupportsModel(urlSuffix, request.Model) {
+    //     err = ErrChatCompletionInvalidModel
+    //     return
+    // }
+
+    reasoningValidator := NewReasoningValidator()
+    if err = reasoningValidator.Validate(request); err != nil {
+        return
+    }
+
+    req, err := c.newRequest(
+        ctx,
+        http.MethodPost,
+        c.config.BaseURL,
+        withBody(request),
+    )
+    if err != nil {
+        return
+    }
+
+    err = c.sendRequest(req, &response)
     return
 }
