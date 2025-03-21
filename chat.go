@@ -404,16 +404,44 @@ func (c *Client) CreateChatCompletion(
         return
     }
 
-    url := c.fullURL(urlSuffix, withModel(request.Model))
-    if len(request.PromptId) > 0 {
-        // If prompt_id is provided, use the BaseURL
-        url = c.config.BaseURL
+    req, err := c.newRequest(
+        ctx,
+        http.MethodPost,
+        c.fullURL(urlSuffix, withModel(request.Model)),
+        withBody(request),
+    )
+    if err != nil {
+        return
+    }
+
+    err = c.sendRequest(req, &response)
+    return
+}
+
+func (c *Client) CreateChatCompletionWithPrompt(
+    ctx context.Context,
+    request ChatCompletionRequest,
+) (response ChatCompletionResponse, err error) {
+    if request.Stream {
+        err = ErrChatCompletionStreamNotSupported
+        return
+    }
+
+    urlSuffix := chatCompletionsSuffix
+    if !checkEndpointSupportsModel(urlSuffix, request.Model) {
+        err = ErrChatCompletionInvalidModel
+        return
+    }
+
+    reasoningValidator := NewReasoningValidator()
+    if err = reasoningValidator.Validate(request); err != nil {
+        return
     }
 
     req, err := c.newRequest(
         ctx,
         http.MethodPost,
-        url,
+        c.config.BaseURL,
         withBody(request),
     )
     if err != nil {
