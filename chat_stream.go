@@ -86,10 +86,15 @@ func (c *Client) CreateChatCompletionStream(
         return
     }
 
+    url := c.fullURL(urlSuffix, withModel(request.Model))
+    if len(request.PromptId) > 0 {
+        // If prompt_id is provided, use the BaseURL
+        url = c.config.BaseURL
+    }
     req, err := c.newRequest(
         ctx,
         http.MethodPost,
-        c.fullURL(urlSuffix, withModel(request.Model)),
+        url,
         withBody(request),
     )
     if err != nil {
@@ -103,39 +108,5 @@ func (c *Client) CreateChatCompletionStream(
     stream = &ChatCompletionStream{
         streamReader: resp,
     }
-    return
-}
-
-func (c *Client) CreateChatCompletionWithPromptWithPrompt(
-    ctx context.Context,
-    request ChatCompletionRequest,
-) (response ChatCompletionResponse, err error) {
-    if request.Stream {
-        err = ErrChatCompletionStreamNotSupported
-        return
-    }
-
-    // urlSuffix := chatCompletionsSuffix
-    // if !checkEndpointSupportsModel(urlSuffix, request.Model) {
-    //     err = ErrChatCompletionInvalidModel
-    //     return
-    // }
-
-    reasoningValidator := NewReasoningValidator()
-    if err = reasoningValidator.Validate(request); err != nil {
-        return
-    }
-
-    req, err := c.newRequest(
-        ctx,
-        http.MethodPost,
-        c.config.BaseURL,
-        withBody(request),
-    )
-    if err != nil {
-        return
-    }
-
-    err = c.sendRequest(req, &response)
     return
 }
