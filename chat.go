@@ -218,7 +218,7 @@ type ChatCompletionResponseFormatJSONSchema struct {
 // ChatCompletionRequest represents a request structure for chat completion API.
 type ChatCompletionRequest struct {
     PromptId    string                  `json:"prompt_id"`
-    PromptParam map[string]string       `json:"prompt_param"`
+    PromptParam map[string]any          `json:"prompt_param"`
     Model       string                  `json:"model"`
     Messages    []ChatCompletionMessage `json:"messages"`
     // MaxTokens The maximum number of tokens that can be generated in the chat completion.
