@@ -250,6 +250,8 @@ func (r *ChatCompletionResponseFormatJSONSchema) UnmarshalJSON(data []byte) erro
 
 // ChatCompletionRequest represents a request structure for chat completion API.
 type ChatCompletionRequest struct {
+	PromptId    string                  `json:"prompt_id,omitempty"`
+	PromptParam map[string]any          `json:"prompt_param,omitempty"`
 	Model    string                  `json:"model"`
 	Messages []ChatCompletionMessage `json:"messages"`
 	// MaxTokens The maximum number of tokens that can be generated in the chat completion.
@@ -459,15 +461,49 @@ func (c *Client) CreateChatCompletion(
 		return
 	}
 
-	req, err := c.newRequest(
-		ctx,
-		http.MethodPost,
-		c.fullURL(urlSuffix, withModel(request.Model)),
-		withBody(request),
-	)
-	if err != nil {
-		return
-	}
+    req, err := c.newRequest(
+        ctx,
+        http.MethodPost,
+        c.fullURL(urlSuffix, withModel(request.Model)),
+        withBody(request),
+    )
+    if err != nil {
+        return
+    }
+
+    err = c.sendRequest(req, &response)
+    return
+}
+
+func (c *Client) CreateChatCompletionWithPrompt(
+    ctx context.Context,
+    request ChatCompletionRequest,
+) (response ChatCompletionResponse, err error) {
+    if request.Stream {
+        err = ErrChatCompletionStreamNotSupported
+        return
+    }
+
+    urlSuffix := chatCompletionsSuffix
+    if !checkEndpointSupportsModel(urlSuffix, request.Model) {
+        err = ErrChatCompletionInvalidModel
+        return
+    }
+
+    reasoningValidator := NewReasoningValidator()
+    if err = reasoningValidator.Validate(request); err != nil {
+        return
+    }
+
+    req, err := c.newRequest(
+        ctx,
+        http.MethodPost,
+        c.config.BaseURL,
+        withBody(request),
+    )
+    if err != nil {
+        return
+    }
 
 	err = c.sendRequest(req, &response)
 	return
